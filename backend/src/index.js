@@ -13,6 +13,9 @@ const submissionRoutes = require('./routes/submissions');
 
 const app = express();
 
+// Trust proxy (Traefik/Nginx/EasyPanel)
+app.set('trust proxy', true);
+
 // ========================================
 // Middlewares globais
 // ========================================
