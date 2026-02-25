@@ -147,6 +147,78 @@ class ApiClient {
     }
     return res;
   }
+
+  // ============ Materials ============
+
+  async uploadMaterial(formData) {
+    const res = await this.request('/materials', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async listMaterials(params = {}) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') query.append(k, v);
+    });
+    const res = await this.request(`/materials?${query.toString()}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async getMaterialSubjects() {
+    const res = await this.request('/materials/subjects');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async getMaterial(id) {
+    const res = await this.request(`/materials/${id}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async getMaterialPreview(id) {
+    const res = await this.request(`/materials/${id}/preview`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async downloadMaterial(id) {
+    const res = await this.request(`/materials/${id}/download`);
+    if (!res.ok) {
+      const data = await res.json();
+      throw new Error(data.error);
+    }
+    return res;
+  }
+
+  async updateMaterial(id, body) {
+    const res = await this.request(`/materials/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async deleteMaterial(id) {
+    const res = await this.request(`/materials/${id}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
 }
 
 const api = new ApiClient();

@@ -10,6 +10,7 @@ const config = require('./config');
 const db = require('./db');
 const authRoutes = require('./routes/auth');
 const submissionRoutes = require('./routes/submissions');
+const materialRoutes = require('./routes/materials');
 
 const app = express();
 
@@ -68,6 +69,9 @@ app.use('/auth', loginLimiter, authRoutes);
 // Submissions
 app.use('/submissions', submissionRoutes);
 
+// Materials
+app.use('/materials', materialRoutes);
+
 // ========================================
 // Erro 404
 // ========================================
@@ -92,15 +96,20 @@ async function start() {
     fs.mkdirSync(config.UPLOADS_DIR, { recursive: true });
   }
 
-  // Auto-migrate: roda a migration na inicialização
-  try {
-    const migrationFile = path.join(__dirname, '..', 'migrations', '001_init.sql');
-    const sql = fs.readFileSync(migrationFile, 'utf8');
-    await db.query(sql);
-    console.log('[DB] Migration aplicada com sucesso.');
-  } catch (err) {
-    console.error('[DB] Erro ao aplicar migration:', err.message);
-    // Não mata o processo — pode ser que a tabela já exista
+  // Auto-migrate: roda todas as migrations na inicialização
+  const migrationsDir = path.join(__dirname, '..', 'migrations');
+  const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter(f => f.endsWith('.sql'))
+    .sort();
+
+  for (const file of migrationFiles) {
+    try {
+      const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+      await db.query(sql);
+      console.log(`[DB] Migration ${file} aplicada com sucesso.`);
+    } catch (err) {
+      console.error(`[DB] Erro ao aplicar migration ${file}:`, err.message);
+    }
   }
 
   app.listen(config.PORT, '0.0.0.0', () => {

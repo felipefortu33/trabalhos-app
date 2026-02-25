@@ -6,6 +6,8 @@ import SubmitWork from './pages/SubmitWork';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminDetail from './pages/AdminDetail';
+import AdminMaterials from './pages/AdminMaterials';
+import StudentMaterials from './pages/StudentMaterials';
 
 function StudentRoute({ children }) {
   const { isAuth, role } = useAuth();
@@ -34,6 +36,14 @@ function App() {
               </StudentRoute>
             }
           />
+          <Route
+            path="/materiais"
+            element={
+              <StudentRoute>
+                <StudentMaterials />
+              </StudentRoute>
+            }
+          />
 
           {/* Admin */}
           <Route path="/admin/login" element={<AdminLogin />} />
@@ -50,6 +60,14 @@ function App() {
             element={
               <AdminRoute>
                 <AdminDetail />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/materiais"
+            element={
+              <AdminRoute>
+                <AdminMaterials />
               </AdminRoute>
             }
           />
