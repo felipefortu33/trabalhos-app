@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  # ========================
+  # PostgreSQL
+  # ========================
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: trabalhos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres_secret_2024}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  # ========================
+  # Backend (Node.js / Express)
+  # ========================
+  backend:
+    build: ./backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres_secret_2024}@postgres:5432/trabalhos
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASS: ${ADMIN_PASS:-admin123}
+      STUDENT_USER: ${STUDENT_USER:-aluno}
+      STUDENT_PASS: ${STUDENT_PASS:-123456}
+      JWT_SECRET: ${JWT_SECRET:-troque_este_segredo_jwt_agora}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-50}
+      UPLOADS_DIR: /app/uploads
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    volumes:
+      - uploads:/app/uploads
+    networks:
+      - app-network
+
+  # ========================
+  # Frontend (React + Nginx)
+  # ========================
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ""  # Vazio = usa mesmo domínio (proxy via nginx)
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "${APP_PORT:-3000}:80"
+    networks:
+      - app-network
+
+volumes:
+  pgdata:
+    driver: local
+  uploads:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
