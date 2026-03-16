@@ -4,12 +4,19 @@ const db = require('./db');
 
 async function migrate() {
   console.log('Running migrations...');
-  const migrationFile = path.join(__dirname, '..', 'migrations', '001_init.sql');
-  const sql = fs.readFileSync(migrationFile, 'utf8');
+  const migrationsDir = path.join(__dirname, '..', 'migrations');
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
 
   try {
-    await db.query(sql);
-    console.log('Migration 001_init.sql applied successfully.');
+    for (const file of files) {
+      const migrationFile = path.join(migrationsDir, file);
+      const sql = fs.readFileSync(migrationFile, 'utf8');
+      await db.query(sql);
+      console.log(`Migration ${file} applied successfully.`);
+    }
   } catch (err) {
     console.error('Migration failed:', err.message);
     process.exit(1);

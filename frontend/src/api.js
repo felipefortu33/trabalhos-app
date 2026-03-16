@@ -47,7 +47,7 @@ class ApiClient {
     if (res.status === 401) {
       this.clearAuth();
       window.location.href = '/login';
-      throw new Error('Sessão expirada');
+      throw new Error('Sessão expirada, logue novamente.');
     }
 
     return res;
@@ -129,6 +129,23 @@ class ApiClient {
     const res = await this.request(`/submissions/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async getSubmissionStats() {
+    const res = await this.request('/submissions/stats');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    return data;
+  }
+
+  async bulkUpdateSubmissionsStatus(ids, status) {
+    const res = await this.request('/submissions/bulk-status', {
+      method: 'PATCH',
+      body: JSON.stringify({ ids, status }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);

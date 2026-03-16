@@ -153,7 +153,7 @@ router.get('/', authMiddleware('admin'), async (req, res) => {
     // Fetch data
     const dataResult = await db.query(
       `SELECT id, student_name, student_ra, subject, title, notes,
-              original_filename, file_size, mime_type, status, feedback,
+              original_filename, file_size, mime_type, status, grade, feedback,
               created_at, updated_at
        FROM submissions ${whereClause}
        ORDER BY ${safeSortBy} ${safeSortOrder}
@@ -208,7 +208,7 @@ router.get('/export/csv', authMiddleware('admin'), async (req, res) => {
 
     const result = await db.query(
       `SELECT id, student_name, student_ra, subject, title, notes,
-              original_filename, file_size, mime_type, status, feedback,
+              original_filename, file_size, mime_type, status, grade, feedback,
               created_at
        FROM submissions ${whereClause}
        ORDER BY created_at DESC`,
@@ -216,7 +216,7 @@ router.get('/export/csv', authMiddleware('admin'), async (req, res) => {
     );
 
     // Build CSV
-    const header = 'ID,Nome,RA,Matéria,Título,Observações,Arquivo,Tamanho(bytes),Status,Feedback,Data Envio';
+    const header = 'ID,Nome,RA,Matéria,Título,Observações,Arquivo,Tamanho(bytes),Status,Nota,Feedback,Data Envio';
     const rows = result.rows.map((r) => {
       const escapeCsv = (val) => `"${String(val || '').replace(/"/g, '""')}"`;
       return [
@@ -229,6 +229,7 @@ router.get('/export/csv', authMiddleware('admin'), async (req, res) => {
         escapeCsv(r.original_filename),
         r.file_size,
         escapeCsv(r.status),
+        r.grade ?? '',
         escapeCsv(r.feedback),
         escapeCsv(r.created_at),
       ].join(',');
@@ -243,6 +244,72 @@ router.get('/export/csv', authMiddleware('admin'), async (req, res) => {
   } catch (err) {
     console.error('[CSV EXPORT ERROR]', err);
     res.status(500).json({ error: 'Erro ao exportar CSV.' });
+  }
+});
+
+// ========================================
+// GET /submissions/stats — Métricas para dashboard admin
+// ========================================
+router.get('/stats', authMiddleware('admin'), async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT
+         COUNT(*)::int AS total,
+         COUNT(*) FILTER (WHERE status = 'recebido')::int AS recebido,
+         COUNT(*) FILTER (WHERE status = 'em_correcao')::int AS em_correcao,
+         COUNT(*) FILTER (WHERE status = 'corrigido')::int AS corrigido,
+         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int AS last_7_days
+       FROM submissions`
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('[STATS ERROR]', err);
+    res.status(500).json({ error: 'Erro ao carregar métricas.' });
+  }
+});
+
+// ========================================
+// PATCH /submissions/bulk-status — Admin atualiza status em lote
+// ========================================
+router.patch('/bulk-status', authMiddleware('admin'), async (req, res) => {
+  try {
+    const { ids, status } = req.body;
+    const validStatuses = ['recebido', 'em_correcao', 'corrigido'];
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Informe ao menos um ID para atualizar.' });
+    }
+
+    const normalizedIds = ids
+      .map((id) => Number.parseInt(id, 10))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    if (normalizedIds.length === 0) {
+      return res.status(400).json({ error: 'Lista de IDs inválida.' });
+    }
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: `Status inválido. Use: ${validStatuses.join(', ')}` });
+    }
+
+    const result = await db.query(
+      `UPDATE submissions
+       SET status = $1,
+           updated_at = NOW()
+       WHERE id = ANY($2::int[])
+       RETURNING id`,
+      [status, normalizedIds]
+    );
+
+    res.json({
+      message: 'Status atualizado com sucesso.',
+      updated: result.rowCount,
+      ids: result.rows.map((row) => row.id),
+    });
+  } catch (err) {
+    console.error('[BULK UPDATE ERROR]', err);
+    res.status(500).json({ error: 'Erro ao atualizar status em lote.' });
   }
 });
 
@@ -340,7 +407,7 @@ router.get('/:id/preview', authMiddleware('admin'), async (req, res) => {
 router.patch('/:id', authMiddleware('admin'), async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, feedback } = req.body;
+    const { status, feedback, grade } = req.body;
 
     const validStatuses = ['recebido', 'em_correcao', 'corrigido'];
 
@@ -362,6 +429,19 @@ router.patch('/:id', authMiddleware('admin'), async (req, res) => {
       params.push(feedback);
     }
 
+    if (grade !== undefined) {
+      if (grade === null || grade === '') {
+        sets.push(`grade = NULL`);
+      } else {
+        const parsedGrade = Number.parseFloat(grade);
+        if (Number.isNaN(parsedGrade) || parsedGrade < 0 || parsedGrade > 10) {
+          return res.status(400).json({ error: 'Nota inválida. Use um valor entre 0 e 10.' });
+        }
+        sets.push(`grade = $${paramIdx++}`);
+        params.push(parsedGrade);
+      }
+    }
+
     if (sets.length === 0) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar.' });
     }
@@ -378,7 +458,7 @@ router.patch('/:id', authMiddleware('admin'), async (req, res) => {
       return res.status(404).json({ error: 'Envio não encontrado.' });
     }
 
-    console.log(`[UPDATE] Envio ID=${id} atualizado: status=${status || 'n/a'}, feedback=${feedback ? 'sim' : 'n/a'}`);
+    console.log(`[UPDATE] Envio ID=${id} atualizado: status=${status || 'n/a'}, nota=${grade ?? 'n/a'}, feedback=${feedback ? 'sim' : 'n/a'}`);
 
     res.json(result.rows[0]);
   } catch (err) {

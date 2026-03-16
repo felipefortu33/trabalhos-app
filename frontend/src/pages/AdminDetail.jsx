@@ -21,6 +21,7 @@ export default function AdminDetail() {
 
   // Edit fields
   const [status, setStatus] = useState('');
+  const [grade, setGrade] = useState('');
   const [feedback, setFeedback] = useState('');
   const [updateMsg, setUpdateMsg] = useState('');
 
@@ -34,6 +35,7 @@ export default function AdminDetail() {
       const data = await api.getSubmission(id);
       setSubmission(data);
       setStatus(data.status);
+      setGrade(data.grade === null || data.grade === undefined ? '' : String(data.grade));
       setFeedback(data.feedback || '');
 
       // Auto-load preview if text file
@@ -59,8 +61,16 @@ export default function AdminDetail() {
     setSaving(true);
     setUpdateMsg('');
     try {
-      const updated = await api.updateSubmission(id, { status, feedback });
+      const parsedGrade = grade === '' ? null : Number(grade);
+      if (parsedGrade !== null && (Number.isNaN(parsedGrade) || parsedGrade < 0 || parsedGrade > 10)) {
+        setUpdateMsg('Erro: nota deve estar entre 0 e 10.');
+        setSaving(false);
+        return;
+      }
+
+      const updated = await api.updateSubmission(id, { status, grade: parsedGrade, feedback });
       setSubmission(updated);
+      setGrade(updated.grade === null || updated.grade === undefined ? '' : String(updated.grade));
       setUpdateMsg('Salvo com sucesso!');
       setTimeout(() => setUpdateMsg(''), 3000);
     } catch (err) {
@@ -171,6 +181,10 @@ export default function AdminDetail() {
               </span>
             </div>
           </div>
+          <div className="detail-item">
+            <div className="label">Nota</div>
+            <div className="value">{submission.grade === null || submission.grade === undefined ? '-' : Number(submission.grade).toFixed(1)}</div>
+          </div>
           {submission.notes && (
             <div className="detail-item" style={{ gridColumn: '1 / -1' }}>
               <div className="label">Observações do aluno</div>
@@ -236,6 +250,19 @@ export default function AdminDetail() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="form-group">
+          <label>Nota (0 a 10)</label>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.1"
+            value={grade}
+            onChange={(e) => setGrade(e.target.value)}
+            placeholder="Ex: 8.5"
+          />
         </div>
 
         <div className="form-group">

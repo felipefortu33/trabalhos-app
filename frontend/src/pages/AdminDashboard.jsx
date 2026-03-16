@@ -14,8 +14,19 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
   const [submissions, setSubmissions] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, total: 0, totalPages: 1 });
+  const [stats, setStats] = useState({
+    total: 0,
+    recebido: 0,
+    em_correcao: 0,
+    corrigido: 0,
+    last_7_days: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkLoading, setBulkLoading] = useState(false);
 
   // Filtros
   const [filters, setFilters] = useState({
@@ -32,9 +43,13 @@ export default function AdminDashboard() {
     setLoading(true);
     setError('');
     try {
-      const data = await api.listSubmissions(filters);
-      setSubmissions(data.data);
-      setPagination(data.pagination);
+      const [submissionsData, statsData] = await Promise.all([
+        api.listSubmissions(filters),
+        api.getSubmissionStats(),
+      ]);
+      setSubmissions(submissionsData.data);
+      setPagination(submissionsData.pagination);
+      setStats(statsData);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -46,12 +61,59 @@ export default function AdminDashboard() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [submissions]);
+
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value, page: 1 }));
   };
 
   const handlePageChange = (newPage) => {
     setFilters((prev) => ({ ...prev, page: newPage }));
+  };
+
+  const handleToggleSelect = (id) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((selectedId) => selectedId !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = (checked) => {
+    if (!checked) {
+      setSelectedIds([]);
+      return;
+    }
+    setSelectedIds(submissions.map((submission) => submission.id));
+  };
+
+  const handleBulkUpdate = async () => {
+    setError('');
+    setSuccess('');
+
+    if (selectedIds.length === 0) {
+      setError('Selecione ao menos um envio para atualizar.');
+      return;
+    }
+
+    if (!bulkStatus) {
+      setError('Selecione um status para aplicar em lote.');
+      return;
+    }
+
+    setBulkLoading(true);
+    try {
+      const result = await api.bulkUpdateSubmissionsStatus(selectedIds, bulkStatus);
+      setSuccess(`${result.updated} envio(s) atualizado(s) com sucesso.`);
+      setBulkStatus('');
+      setSelectedIds([]);
+      await fetchData();
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkLoading(false);
+    }
   };
 
   const handleExportCsv = async () => {
@@ -87,10 +149,17 @@ export default function AdminDashboard() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
+  const formatGrade = (grade) => {
+    if (grade === null || grade === undefined) return '-';
+    return Number(grade).toFixed(1);
+  };
+
   const statusBadge = (s) => {
     const labels = { recebido: 'Recebido', em_correcao: 'Em correção', corrigido: 'Corrigido' };
     return <span className={`badge badge-${s}`}>{labels[s] || s}</span>;
   };
+
+  const allSelected = submissions.length > 0 && selectedIds.length === submissions.length;
 
   return (
     <Layout title="Painel Admin">
@@ -99,6 +168,29 @@ export default function AdminDashboard() {
         <button className="btn btn-success btn-sm" onClick={handleExportCsv}>
           📥 Exportar CSV
         </button>
+      </div>
+
+      <div className="stats-grid mb-2">
+        <div className="card stat-card">
+          <span className="stat-label">Total</span>
+          <strong className="stat-value">{stats.total}</strong>
+        </div>
+        <div className="card stat-card">
+          <span className="stat-label">Recebidos</span>
+          <strong className="stat-value">{stats.recebido}</strong>
+        </div>
+        <div className="card stat-card">
+          <span className="stat-label">Em correção</span>
+          <strong className="stat-value">{stats.em_correcao}</strong>
+        </div>
+        <div className="card stat-card">
+          <span className="stat-label">Corrigidos</span>
+          <strong className="stat-value">{stats.corrigido}</strong>
+        </div>
+        <div className="card stat-card">
+          <span className="stat-label">Últimos 7 dias</span>
+          <strong className="stat-value">{stats.last_7_days}</strong>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -154,7 +246,33 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {success && <div className="alert alert-success">{success}</div>}
       {error && <div className="alert alert-error">{error}</div>}
+
+      <div className="card mb-2">
+        <div className="bulk-actions">
+          <div className="text-muted">{selectedIds.length} selecionado(s)</div>
+          <select
+            value={bulkStatus}
+            onChange={(e) => setBulkStatus(e.target.value)}
+            disabled={bulkLoading}
+          >
+            <option value="">Selecionar status...</option>
+            {STATUS_OPTIONS.filter((o) => o.value).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleBulkUpdate}
+            disabled={bulkLoading || selectedIds.length === 0 || !bulkStatus}
+          >
+            {bulkLoading ? 'Atualizando...' : 'Aplicar em lote'}
+          </button>
+        </div>
+      </div>
 
       {/* Tabela */}
       {loading ? (
@@ -171,6 +289,13 @@ export default function AdminDashboard() {
             <table>
               <thead>
                 <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(e) => handleToggleSelectAll(e.target.checked)}
+                    />
+                  </th>
                   <th>ID</th>
                   <th>Aluno</th>
                   <th>RA</th>
@@ -178,6 +303,7 @@ export default function AdminDashboard() {
                   <th>Título</th>
                   <th>Arquivo</th>
                   <th>Status</th>
+                  <th>Nota</th>
                   <th>Data</th>
                   <th>Ações</th>
                 </tr>
@@ -185,6 +311,13 @@ export default function AdminDashboard() {
               <tbody>
                 {submissions.map((s) => (
                   <tr key={s.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(s.id)}
+                        onChange={() => handleToggleSelect(s.id)}
+                      />
+                    </td>
                     <td>{s.id}</td>
                     <td>{s.student_name}</td>
                     <td>{s.student_ra}</td>
@@ -198,6 +331,7 @@ export default function AdminDashboard() {
                       ({formatSize(s.file_size)})
                     </td>
                     <td>{statusBadge(s.status)}</td>
+                    <td>{formatGrade(s.grade)}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>{formatDate(s.created_at)}</td>
                     <td>
                       <button
